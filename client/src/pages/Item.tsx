@@ -74,19 +74,23 @@ const api = {
         headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
       })
       .then((res) => res.data),
-  createItem: (data: Partial<Item>) =>
+  createItem: (data: FormData) =>
     axios
       .post(`${import.meta.env.VITE_API_URL}/items`, data, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+        headers: { 
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
       })
       .then((res) => res.data),
   deleteItem: (id: string) =>
     axios.delete(`${import.meta.env.VITE_API_URL}/items/${id}`, {
       headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
     }),
-  updateItem: (id: string, data: Partial<Item>) =>
+  updateItem: (id: string, data: FormData) =>
     axios.put(`${import.meta.env.VITE_API_URL}/items/${id}`, data, {
-      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      headers: { 
+        Authorization: `Bearer ${localStorage.getItem("token")}`,
+      },
     }),
 };
 
@@ -142,7 +146,8 @@ export const Item: React.FC = () => {
       supplier: "",
       stockUnit: "PCS",
       unitPrice: 0,
-      images: [],
+      images: undefined,
+      imagesToDelete: [],
       status: true,
     },
   });
@@ -172,13 +177,25 @@ export const Item: React.FC = () => {
   }, [editingItem]);
 
   const onSubmit = (data: any) => {
-    const formData = {
-      ...data,
-      status: data.status ? "Enabled" : "Disabled",
-      supplier: data.supplier || undefined,
-    };
+    const formData = new FormData();
+    
+    // Append all form fields to FormData
+    formData.append('itemName', data.itemName);
+    formData.append('inventoryLocation', data.inventoryLocation);
+    formData.append('brand', data.brand);
+    formData.append('category', data.category);
+    formData.append('supplier', data.supplier);
+    formData.append('stockUnit', data.stockUnit);
+    formData.append('unitPrice', data.unitPrice.toString());
+    formData.append('status', data.status ? "Enabled" : "Disabled");
 
-    if (!formData.supplier) {
+    if (data.images && data.images.length > 0) {
+      Array.from(data.images).forEach((file: File) => {
+        formData.append('itemImages', file);
+      });
+    }
+
+    if (!data.supplier) {
       form.setError('supplier', {
         type: 'required',
         message: 'Please select a supplier'
@@ -186,11 +203,14 @@ export const Item: React.FC = () => {
       return;
     }
 
-    // Handle create or update based on whether we're editing
+    // Handle create or update
     if (editingItem) {
+      if (data.imagesToDelete) {
+        formData.append('imagesToDelete', JSON.stringify(data.imagesToDelete));
+      }
       updateItemMutation.mutate({ id: editingItem.id, data: formData });
     } else {
-      formData.itemNo = `ITEM-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+      formData.append('itemNo', `ITEM-${Math.random().toString(36).substr(2, 9).toUpperCase()}`);
       createItemMutation.mutate(formData);
     }
   };
@@ -209,7 +229,7 @@ export const Item: React.FC = () => {
 
   // Add edit mutation
   const updateItemMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Item> }) =>
+    mutationFn: ({ id, data }: { id: string; data: FormData }) =>
       api.updateItem(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["items"] });
@@ -407,13 +427,51 @@ export const Item: React.FC = () => {
                       <FormField
                         control={form.control}
                         name="images"
-                        render={({ field }) => (
+                        render={({ field: { onChange, value, ...field } }) => (
                           <FormItem>
                             <FormLabel>Item Images</FormLabel>
                             <FormControl>
-                              <Input type="file" multiple accept="image/*" />
+                              <Input 
+                                type="file" 
+                                multiple 
+                                accept="image/*"
+                                onChange={(e) => {
+                                  if (e.target.files && e.target.files.length > 0) {
+                                    onChange(e.target.files);
+                                  }
+                                }}
+                                {...field}
+                              />
                             </FormControl>
                             <FormMessage />
+                            {editingItem && editingItem.images && editingItem.images.length > 0 && (
+                              <div className="mt-2">
+                                <p className="text-sm font-medium">Current Images:</p>
+                                <div className="flex gap-2 mt-1">
+                                  {editingItem.images.map((image, index) => (
+                                    <div key={index} className="relative">
+                                      <img 
+                                        src={`${import.meta.env.VITE_API_URL}/${image}`} 
+                                        alt={`Item image ${index + 1}`} 
+                                        className="w-20 h-20 object-cover rounded"
+                                      />
+                                      <Button
+                                        type="button"
+                                        variant="destructive"
+                                        size="icon"
+                                        className="absolute -top-2 -right-2"
+                                        onClick={() => {
+                                          const currentImages = form.getValues('imagesToDelete') || [];
+                                          form.setValue('imagesToDelete', [...currentImages, image]);
+                                        }}
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </FormItem>
                         )}
                       />

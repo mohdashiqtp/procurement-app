@@ -2,15 +2,52 @@ const Item = require('../models/item');
 const AppError = require('../utils/appError');
 const catchAsync = require('../utils/catchAsync');
 const mongoose = require('mongoose');
+const uploadToFileSystem = require('../utils/uploadToFileSystem'); 
+const deleteFromFileSystem = require('../utils/deleteFromFileSystem'); 
+
+//  helper functions 
+const validateImageFile = (file) => {
+  const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif'];
+  
+  if (!file || typeof file !== 'object') {
+    throw new AppError('Invalid file object received', 400);
+  }
+
+  const requiredProps = ['path', 'originalname', 'mimetype'];
+  const missingProps = requiredProps.filter(prop => !file[prop]);
+  
+  if (missingProps.length > 0) {
+    throw new AppError(`Missing required file properties: ${missingProps.join(', ')}`, 400);
+  }
+
+  if (!allowedMimeTypes.includes(file.mimetype)) {
+    throw new AppError(`Invalid file type. Allowed types: ${allowedMimeTypes.join(', ')}`, 400);
+  }
+};
+
+const processImageFile = (file) => ({
+  url: `/uploads/${file.filename}`,
+  filename: file.filename,
+  contentType: file.mimetype,
+  size: file.size,
+});
 
 // Create a new item
 const createItem = catchAsync(async (req, res) => {
-  
+  const itemImages = [];
+
+  if (req.files?.length) {
+    for (const file of req.files) {
+      validateImageFile(file);
+      itemImages.push(processImageFile(file));
+    }
+  }
+
   if (!mongoose.Types.ObjectId.isValid(req.body.supplier)) {
     throw new AppError('Invalid supplier ID', 400);
   }
 
-  const item = await Item.create(req.body);
+  const item = await Item.create({ ...req.body, itemImages });
   res.status(201).json({ success: true, data: item });
 });
 
@@ -55,6 +92,30 @@ const getItem = catchAsync(async (req, res, next) => {
 // Update an item
 const updateItem = catchAsync(async (req, res, next) => {
   const { id: itemId } = req.params;
+  
+  // Handle image updates
+  if (req.files?.length) {
+    const newImages = req.files.map(file => {
+      validateImageFile(file);
+      return processImageFile(file);
+    });
+    
+    // Handle image deletions if specified
+    if (req.body.imagesToDelete) {
+      const imagesToDelete = JSON.parse(req.body.imagesToDelete);
+      await Promise.all([
+        ...imagesToDelete.map(filename => deleteFromFileSystem(filename)),
+        Item.findByIdAndUpdate(itemId, {
+          $pull: { itemImages: { filename: { $in: imagesToDelete } } }
+        })
+      ]);
+    }
+    
+    await Item.findByIdAndUpdate(itemId, {
+      $push: { itemImages: { $each: newImages } }
+    });
+  }
+
   const item = await Item.findByIdAndUpdate(
     itemId,
     { $set: req.body },
@@ -71,11 +132,20 @@ const updateItem = catchAsync(async (req, res, next) => {
 // Delete an item
 const deleteItem = catchAsync(async (req, res, next) => {
   const { id: itemId } = req.params;
-  const item = await Item.findByIdAndDelete(itemId);
+  const item = await Item.findById(itemId);
 
   if (!item) {
     return next(new AppError(`No item found with id ${itemId}`, 404));
   }
+
+  // Delete all associated images from filesystem
+  if (item.itemImages && item.itemImages.length > 0) {
+    for (const image of item.itemImages) {
+      await deleteFromFileSystem(image.filename);
+    }
+  }
+
+  await Item.findByIdAndDelete(itemId);
 
   res.status(200).json({ success: true, message: 'Item deleted successfully' });
 });

@@ -13,6 +13,13 @@ const ITEM_STATUS = Object.freeze({
   DISABLED: 'Disabled',
 });
 
+const itemImageSchema = new mongoose.Schema({
+  url: String,
+  filename: String,
+  contentType: String,
+  size: Number
+});
+
 const itemSchema = new Schema({
   itemNo: {
     type: String,
@@ -55,10 +62,7 @@ const itemSchema = new Schema({
     required: true,
     min: 0,
   },
-  itemImages: [{
-    type: String,
-    required: true,
-  }],
+  itemImages: [itemImageSchema],
   status: {
     type: String,
     enum: Object.values(ITEM_STATUS),
