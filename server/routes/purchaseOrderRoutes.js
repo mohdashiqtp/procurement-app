@@ -17,22 +17,22 @@ const updatePOValidation = [
 ];
 
 // Group routes with common middleware
-router.use(authMiddleware);
+// router.use(authMiddleware);
 
 // Create a new purchase order
-router.post("/add", createPOValidation, validateRequest, purchaseOrderController.createPurchaseOrder);
+router.post("/add", createPOValidation, validateRequest, authMiddleware, purchaseOrderController.createPurchaseOrder);
 
 // Get purchase order by ID
-router.get("/:id", param("id").isMongoId(), validateRequest, purchaseOrderController.getPurchaseOrderById);
+router.get("/:id", param("id").isMongoId(), validateRequest,authMiddleware, purchaseOrderController.getPurchaseOrderById);
 
 // Update purchase order
-router.put("/:id", param("id").isMongoId(), updatePOValidation, validateRequest, purchaseOrderController.updatePurchaseOrder);
+router.put("/:id", param("id").isMongoId(), updatePOValidation, validateRequest,authMiddleware , purchaseOrderController.updatePurchaseOrder);
 
 // Delete purchase order
-router.delete("/:id", param("id").isMongoId(), validateRequest, purchaseOrderController.deletePurchaseOrder);
+router.delete("/:id", param("id").isMongoId(), validateRequest,authMiddleware , purchaseOrderController.deletePurchaseOrder);
 
 // Get total of purchase orders
-router.get("/total", purchaseOrderController.getTotalPurchaseOrders);
+router.get("/total", authMiddleware, purchaseOrderController.getTotalPurchaseOrders);
 
 // Get all purchase orders
 router.get("/", purchaseOrderController.getAllPurchaseOrders);
